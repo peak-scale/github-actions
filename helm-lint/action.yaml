@@ -1,0 +1,53 @@
+name: Helm Chart Linting
+description: Helm Chart Linting
+inputs:
+  directory:
+    required: true
+    description: Chart name
+    default: "charts"
+  docsTesting:
+    description: "Enable docs-testing (helm-docs)"
+    required: false
+    default: "true"
+  schemaTesting:
+    description: "Enable schema-testing (helm schema)"
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Run docs-testing (helm-docs) for all charts
+      id: helm-docs
+      shell: bash
+      run: |
+        for chart in ${{ inputs.registry-password }}/*; do
+          echo "Running helm-docs in ${chart}"
+          (cd "${chart}" && make helm-docs)
+          # Check for any changes in this chart directory
+          if [[ $(git diff --stat "${chart}") != "" ]]; then
+            echo -e "\033[0;31mDocumentation outdated in ${chart}! (Run make helm-docs locally and commit)\033[0m ❌"
+            git diff --color "${chart}"
+            exit 1
+          else
+            echo -e "\033[0;32mDocumentation up to date in ${chart}\033[0m ✔"
+          fi
+        done
+
+    - name: Run schema-testing for all charts
+      id: helm-schema
+      shell: bash
+      run: |
+        for chart in "${{ inputs.registry-password }}/*"; do
+          echo "Running helm schema in ${chart}"
+          cd "${chart}"
+          helm schema -output generated-schema.json
+          CURRENT_SCHEMA=$(cat values.schema.json)
+          GENERATED_SCHEMA=$(cat generated-schema.json)
+          cd - > /dev/null
+          if [ "$CURRENT_SCHEMA" != "$GENERATED_SCHEMA" ]; then
+            echo -e "\033[0;31mSchema must be re-generated in ${chart}! Run 'helm schema' in the helm-chart directory\033[0m" 1>&2
+            exit 1
+          else
+            echo -e "\033[0;32mSchema is up to date in ${chart}\033[0m"
+          fi
+        done
